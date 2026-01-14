@@ -1,9 +1,10 @@
 export interface Attachment {
   id: string;
-  file: File;
-  previewUrl: string;
+  fileName: string;
+  previewUrl?: string;
   base64Data?: string;
   mimeType: string;
+  size?: number;
 }
 
 export interface Message {
@@ -27,4 +28,20 @@ export interface ChatState {
   sessions: ChatSession[];
   currentSessionId: string | null;
   isSidebarOpen: boolean;
+}
+
+export type UserRole = "admin" | "user";
+
+export interface UserInfo {
+  id: number;
+  email: string;
+  role: UserRole;
+}
+
+export interface KnowledgeFile {
+  id: number;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
 }

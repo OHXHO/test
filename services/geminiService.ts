@@ -1,88 +1,60 @@
-import { GoogleGenAI } from "@google/genai";
-import { Message } from "../types";
+import { Message } from "@/types";
 
-const MODEL_NAME = 'gemini-3-flash-preview';
-
-/**
- * Prepares the history for the API call.
- * Converts our internal Message format to the API's Content format.
- */
-const prepareHistory = (messages: Message[]) => {
-  return messages.map((msg) => {
-    const parts: any[] = [];
-    
-    // Add text if present
-    if (msg.text) {
-      parts.push({ text: msg.text });
-    }
-
-    // Add attachments if present
-    if (msg.attachments && msg.attachments.length > 0) {
-      msg.attachments.forEach((att) => {
-        if (att.base64Data) {
-          parts.push({
-            inlineData: {
-              mimeType: att.mimeType,
-              data: att.base64Data,
-            },
-          });
-        }
-      });
-    }
-
-    return {
-      role: msg.role,
-      parts: parts,
-    };
-  });
-};
+interface StreamOptions {
+  signal?: AbortSignal;
+}
 
 /**
- * Sends a message to the Gemini model with history and streams the response.
+ * Streams chat completion chunks from the backend API.
  */
 export const streamGeminiResponse = async (
   history: Message[],
-  onChunk: (text: string) => void
+  onChunk: (text: string) => void,
+  options: StreamOptions = {}
 ): Promise<string> => {
-  try {
-    // Dynamically initialize the client to support user-configured keys/urls
-    const customApiKey = localStorage.getItem('custom_gemini_api_key');
-    const customBaseUrl = localStorage.getItem('custom_gemini_base_url');
-    
-    // Fallback to process.env.API_KEY if no custom key is set
-    const apiKey = customApiKey || process.env.API_KEY;
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({ history }),
+    signal: options.signal,
+  });
 
-    // Construct options object
-    const clientOptions: any = { apiKey };
-    if (customBaseUrl) {
-      clientOptions.baseUrl = customBaseUrl;
-    }
-
-    const ai = new GoogleGenAI(clientOptions);
-
-    const contents = prepareHistory(history);
-    
-    // We strictly use generateContentStream for full control over history management (stateless REST style from client perspective)
-    // allowing us to easily inject images at any point in the history.
-    const result = await ai.models.generateContentStream({
-      model: MODEL_NAME,
-      contents: contents,
-    });
-
-    let fullText = "";
-
-    for await (const chunk of result) {
-      const text = chunk.text;
-      if (text) {
-        fullText += text;
-        onChunk(text);
+  if (!response.ok) {
+    let errorText = "Gemini API 请求失败";
+    try {
+      const data = await response.json();
+      if (data?.error) {
+        errorText = data.error;
       }
+    } catch (err) {
+      // ignore JSON parse errors and fall back to default message
     }
-
-    return fullText;
-
-  } catch (error) {
-    console.error("Gemini API Error:", error);
-    throw error;
+    if (response.status === 401) {
+      errorText = "未登录或登录已过期，请重新登录。";
+    }
+    throw new Error(errorText);
   }
+
+  if (!response.body) {
+    throw new Error("Gemini API 响应为空");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let fullText = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    if (chunk) {
+      fullText += chunk;
+      onChunk(chunk);
+    }
+  }
+
+  return fullText;
 };

@@ -14,12 +14,3 @@ export const fileToBase64 = (file: File): Promise<string> => {
     reader.onerror = (error) => reject(error);
   });
 };
-
-/**
- * Validates if the file type is supported by Gemini (Images mainly for this demo).
- * We can also support text files by reading their content, but let's stick to images for visual attachment logic
- * and maybe simple text reading if needed.
- */
-export const isImageFile = (file: File) => {
-  return file.type.startsWith('image/');
-};
